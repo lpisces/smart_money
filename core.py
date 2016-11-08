@@ -71,7 +71,7 @@ def stock_list():
   return stock
 
 # 复权数据
-def fq(market, code, start, end, k = "day", fq = "qfq", size = 1000):
+def fq(market, code, start, end, k = "day", fq = "qfq", size = 250):
   url = "http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline_dayqfq&param=%s%s,%s,%s,%s,%s,%s&r=%s" % (market, code, k, start, end, size, fq, random.random())
   return json.loads(requests.get(url).text.split("=")[1])["data"][market + code][fq + k]
 
@@ -84,26 +84,39 @@ def macd(close, short=12, long=26, m=9):
 def ma(close, p = 30):
   return talib.MA(close, p)
 
-def test():
-  data = fq("sh", "600149", "2013-01-01", "2016-11-08")
+def high(high, day = 30):
+  pass
+
+def pick(market, code, start, end):
+  data = fq(market, code, start, end)
   diff, dea, _macd = macd(np.array([float(j[2]) for j in data]))
   flag = []
   for i in range(len(diff)):
     flag.append(0)
-    if i < 10 or i + 2 > len(diff) - 1 :
+    if i < len(diff) - 5:
       continue
     if min(diff[i-10:i]) > 0 and min(dea[i-10:i]) > 0:
       if _macd[i] >= 0:
-        if float(data[i][2]) > max([float(j[3]) for j in data][i-60:i]):
+        if float(data[i][2]) > max([float(j[3]) for j in data][i-30:i]):
           if max(flag[i-5:i]) == 1:
             continue
           else:
             flag[i] = 1
-          print data[i]
-          print "%0.2f%%" % ((max([float(n[3]) for n in data[i+1:i+3]])/float(data[i][2]) - 1) * 100, )
-          print "%0.2f%%" % ((min([float(n[4]) for n in data[i+1:i+3]])/float(data[i][2]) - 1) * 100, )
+          if max(flag[i-5:i]) == 1:
+            return True
+  return False
+          #print "%0.2f%%" % ((max([float(n[3]) for n in data[i+1:i+3]])/float(data[i][2]) - 1) * 100, )
+          #print "%0.2f%%" % ((min([float(n[4]) for n in data[i+1:i+3]])/float(data[i][2]) - 1) * 100, )
   
 
 if __name__ == "__main__":
   #print fq("sz", "000002", "2013-01-01", "2016-11-08")
-  test()
+  for i in stock_list():
+    print i[1]
+    try:
+      if pick(i[0], i[1], "2016-01-01", "2016-11-08"):
+        print i[0], i[1]
+    except Exception as e:
+      print e
+      continue
+
