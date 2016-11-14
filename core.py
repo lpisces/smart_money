@@ -10,6 +10,7 @@
 import requests
 import zipfile, StringIO
 from bs4 import BeautifulSoup as bs
+from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 import datetime
 import pickle
@@ -71,9 +72,22 @@ def stock_list():
   return stock
 
 # 复权数据
-def fq(market, code, start, end, k = "day", fq = "qfq", size = 250):
+def _fq(market, code, start, end, k = "day", fq = "qfq", size = 640):
   url = "http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline_dayqfq&param=%s%s,%s,%s,%s,%s,%s&r=%s" % (market, code, k, start, end, size, fq, random.random())
   return json.loads(requests.get(url).text.split("=")[1])["data"][market + code][fq + k]
+
+def long_fq(market, code, start, end, k = "day", fq = "qfq", size = 640):
+  date_s, date_e = parse(start), parse(end)
+  data = []
+  while True:
+    if (date_e - date_s).days <= 640:
+      data += _fq(market, code, start, end, k, fq, size)
+      return data
+    else:
+      end = (date_s + datetime.timedelta(days = 640)).strftime("%Y-%m-%d")
+      data += _fq(market, code, start, end, k, fq, size)
+      date_s = parse(end) + datetime.timedelta(days = 1)
+    
 
 # macd
 def macd(close, short=12, long=26, m=9):
@@ -87,36 +101,41 @@ def ma(close, p = 30):
 def high(high, day = 30):
   pass
 
-def pick(market, code, start, end):
-  data = fq(market, code, start, end)
-  diff, dea, _macd = macd(np.array([float(j[2]) for j in data]))
-  flag = []
-  for i in range(len(diff)):
-    flag.append(0)
-    if i < len(diff) - 5:
+def pick(q):
+  market, code, start, end = q
+  try:
+    data = long_fq(market, code, start, end)
+  except Exception as e:
+    print e
+    print q
+    return (market, code, [])
+  c = [float(j[2]) for j in data]
+  n = 10
+  percent = 50
+  r = [0, ] * n
+  ret = []
+  for i in range(len(c)):
+    if i < n:
       continue
-    if min(diff[i-10:i]) > 0 and min(dea[i-10:i]) > 0:
-      if _macd[i] >= 0:
-        if float(data[i][2]) > max([float(j[3]) for j in data][i-30:i]):
-          if max(flag[i-5:i]) == 1:
-            continue
-          else:
-            flag[i] = 1
-          if max(flag[i-5:i]) == 1:
-            return True
-  return False
-          #print "%0.2f%%" % ((max([float(n[3]) for n in data[i+1:i+3]])/float(data[i][2]) - 1) * 100, )
-          #print "%0.2f%%" % ((min([float(n[4]) for n in data[i+1:i+3]])/float(data[i][2]) - 1) * 100, )
-  
+    if max(r[i-n:i]) == 1:
+      r.append(0)
+      continue
+    if i + n < len(c):
+      if max(c[i:i+n])/c[i] > (100 + percent) / 100.0:
+        r.append(1)
+        ret.append(data[i][0])
+      else:
+        r.append(0)
+  print (market, code, ret)
+  return (market, code, ret)
 
 if __name__ == "__main__":
-  #print fq("sz", "000002", "2013-01-01", "2016-11-08")
+  q = []
   for i in stock_list():
-    print i[1]
-    try:
-      if pick(i[0], i[1], "2016-01-01", "2016-11-08"):
-        print i[0], i[1]
-    except Exception as e:
-      print e
-      continue
+    q.append((i[0], i[1], "2006-01-01", "2016-11-08"))
+  pool = ThreadPool(16)
+  r = pool.map(pick, q)
+  pool.close() 
+  pool.join()
+    
 
