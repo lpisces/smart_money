@@ -80,12 +80,16 @@ def long_fq(market, code, start, end, k = "day", fq = "qfq", size = 640):
   date_s, date_e = parse(start), parse(end)
   data = []
   while True:
+    start = date_s.strftime("%Y-%m-%d")
+    end = date_e.strftime("%Y-%m-%d")
     if (date_e - date_s).days <= 640:
       data += _fq(market, code, start, end, k, fq, size)
+      print start, end
       return data
     else:
       end = (date_s + datetime.timedelta(days = 640)).strftime("%Y-%m-%d")
       data += _fq(market, code, start, end, k, fq, size)
+      print start, end
       date_s = parse(end) + datetime.timedelta(days = 1)
     
 
@@ -98,17 +102,18 @@ def macd(close, short=12, long=26, m=9):
 def ma(close, p = 30):
   return talib.MA(close, p)
 
-def high(high, day = 30):
-  pass
-
 def pick(q):
   market, code, start, end = q
   try:
     data = long_fq(market, code, start, end)
   except Exception as e:
     print e
-    print q
-    return (market, code, [])
+    if parse(start) < parse(end):
+      start = (parse(start) + datetime.timedelta(days = 100)).strftime("%Y-%m-%d")
+      if parse(start) >= parse(end):
+        return (market, code, [])
+      q = (market, code, start, end)
+      return pick(q)
   c = [float(j[2]) for j in data]
   n = 10
   percent = 50
@@ -126,16 +131,23 @@ def pick(q):
         ret.append(data[i][0])
       else:
         r.append(0)
-  print (market, code, ret)
-  return (market, code, ret)
+  return (market, code, list(set(ret)))
 
 if __name__ == "__main__":
   q = []
-  for i in stock_list():
-    q.append((i[0], i[1], "2006-01-01", "2016-11-08"))
+#  for i in stock_list():
+#    q.append((i[0], i[1], "2011-01-01", "2016-11-08"))
+  q.append(("sz", "000002", "2011-01-01", "2016-11-14"))
   pool = ThreadPool(16)
   r = pool.map(pick, q)
   pool.close() 
   pool.join()
+
+  data = long_fq("sz", "000002", "2011-01-01", "2016-11-14")
+  p = []
+  for i in range(len(data)):
+    if data[i][0] in r[0][2]:
+      p.append(i)
+  print p
     
 
