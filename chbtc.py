@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*- 
 
+from __future__ import absolute_import
 import json
 import requests
 import datetime
@@ -10,6 +11,10 @@ import numpy as np
 import hashlib
 import os
 import math
+import api
+
+access_key    = 'b45c8123-c3d6-418c-be71-96554a21cd9a'
+access_secret = '39460515-9d51-447e-a0c5-50664242e69f'
 
 def k(currency = "btc_cny", t = "5min", since  = "", size = 1000, retry = 5):
   url = "http://api.chbtc.com/data/v1/kline?currency=%s&type=%s&since=%s&size=%s" % (currency, t, since, size)
@@ -169,11 +174,84 @@ def _mkdir(path):
     print e
     return False
 
+def account():
+  chbtc_api = api.chbtc_api(access_key, access_secret)
+  account = chbtc_api.query_account()
+  return account
+
+def get_order(oid, currency):
+  chbtc_api = api.chbtc_api(access_key, access_secret)
+  order = chbtc_api.get_order(oid, currency)
+  return order
+
+def cancel_order(oid, currency):
+  chbtc_api = api.chbtc_api(access_key, access_secret)
+  order = chbtc_api.cancel_order(oid, currency)
+  return order
+
+def order(currency, t = "b"):
+  _account = account()
+  chbtc_api = api.chbtc_api(access_key, access_secret)
+  a = float(_account["result"]["balance"][currency.split("_")[0].upper()]["amount"])
+  b = float(_account["result"]["balance"][currency.split("_")[-1].upper()]["amount"])
+  tick = _tick(currency)
+  sell = float(tick["ticker"]["sell"])
+  buy = float(tick["ticker"]["buy"])
+  cur = "%.3f" % (a, )
+
+  if t == "b":
+    t = 1
+    price = "%.3f" % (sell, )
+    amount = "%.3f" % (b / sell, )
+  else:
+    t = 0 
+    price = "%.3f" % (buy, )
+    amount = cur
+
+  if amount < 0.001 and t == "b":
+    print "no money left."
+    return False
+
+  if cur < 0.001 and t == "s":
+    print "nothing to sell."
+    return False
+
+  print price, amount, t, currency
+  r = chbtc_api.order(price, amount, t, currency)
+  r["price"] = price
+  r["status"] = "open"
+  return r
+
+def _tick(currency, retry = 5):
+  url = "http://api.chbtc.com/data/v1/ticker?currency=%s" % (currency, )
+  while retry > 0:
+    try:
+      return json.loads(requests.get(url).text)
+    except Exception as e:
+      #print e
+      retry -= 1
+      time.sleep(3)
+      continue
+  return []
+
+def get_feature(c):
+  cond_dir = "%s_%s_%s_%s" % (c["currency"], c["t"], c["n"], c["increase"])
+  _mkdir("./data/feature/%s" % (cond_dir, ))
+  _k = k(c["currency"], c["t"], c["since"], c["size"])
+  for i in pick(_k, c["n"], c["increase"]):
+    f_file = "./data/feature/%s/%s" % (cond_dir, i)
+    if not os.path.isfile(f_file):
+      f = feature(c["currency"], c["t"], i - 1000 * str2sec(c["t"]) * (f_size + 970), f_size + 970)
+      md5 = hashlib.md5(json.dumps(f)).hexdigest()
+      with open(f_file, "w") as fd:
+        fd.write(json.dumps(f))
+
 if __name__ == "__main__":
   f_size = 30
   for c in cond()[:1]:
     cond_dir = "%s_%s_%s_%s" % (c["currency"], c["t"], c["n"], c["increase"])
     _mkdir("./data/feature/%s" % (cond_dir, ))
+    _mkdir("./data/trade/%s" % (cond_dir, ))
     _k = k(c["currency"], c["t"], c["since"], c["size"])
 
     for i in pick(_k, c["n"], c["increase"]):
@@ -188,12 +266,40 @@ if __name__ == "__main__":
     _c = [j / _c[0] for j in _c]
     diff, dea, _macd = macd(np.array(_c))
     for j in [f for f in os.listdir("./data/feature/%s" % (cond_dir, )) if os.path.isfile(os.path.join("./data/feature/%s" % (cond_dir, ), f))]:
-      with open(os.path.join("./data/feature/%s" % (cond_dir, ), j), "r") as feature_file:
+      with open(os.path.join("./data/feature/%s/" % (cond_dir, ), j), "r") as feature_file:
         fea = json.loads(feature_file.read())
         v = _v(_k, fea)
-        if v < fea["v"]:
-          print "buy"
-        print "c:%s" % (v, )
-        print "v:%s" % (fea["v"], )
-    
-    
+        #if v < fea["v"]:
+        if True:
+          while True:
+            r = order(c["currency"], "b")
+            if r["code"] == 1000:
+              o = get_order(r["id"], c["currency"])
+              if o["status"] != 2:
+                cancel_order(r["id"], c["currency"])
+              else:
+                break
+          print "BUY"
+          with open("./data/trade/%s/%s" % (cond_dir, _k[-1][0]), "w") as t:
+            t.write(json.dumps(r))
+        for jj in [f for f in os.listdir("./data/trade/%s" % (cond_dir, )) if os.path.isfile(os.path.join("./data/trade/%s" % (cond_dir, ), f))]:
+          with open(os.path.join("./data/trade/%s/" % (cond_dir, ), jj), "r+") as trade_file: 
+            trade = json.loads(trade_file.read())
+            if True:
+            #if trade["status"] == "open":
+              if (float(trade["price"]) / _k[-1][4]) * 100 - 100 > c["increase"] or int(jj) + str2sec(c["t"]) * 1000 * c["n"] < _k[-1][0]:
+                while True:
+                  r = order(c["currency"], "s")
+                  if r["code"] == 1000:
+                    o = get_order(r["id"], c["currency"])
+                    print o
+                    if o["status"] != 2:
+                      cancel_order(r["id"], c["currency"])
+                    else:
+                      break
+                print "SELL"
+                trade["status"] == "close"
+                trade_file.seek(0)
+                trade_file.write(json.dumps(trade))
+                trade_file.truncate()
+            
