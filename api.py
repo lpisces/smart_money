@@ -64,6 +64,7 @@ class chbtc_api:
                 return doc
             except Exception,ex:
                 #print >>sys.stderr, 'chbtc request ex: ', ex
+                time.sleep(1)
                 retry -= 1
         return None
 
@@ -89,7 +90,6 @@ class chbtc_api:
             #print obj
             return obj
         except Exception,ex:
-            #print >>sys.stderr, 'chbtc order exception,',ex
             print ex
             return None
 
@@ -102,7 +102,6 @@ class chbtc_api:
             #print obj
             return obj
         except Exception,ex:
-            #print >>sys.stderr, 'chbtc query_account exception,',ex
             print ex
             return None
 
@@ -115,9 +114,21 @@ class chbtc_api:
             #print obj
             return obj
         except Exception,ex:
-            #print >>sys.stderr, 'chbtc query_account exception,',ex
             print ex
             return None
+
+    def get_orders(self, currency, t = 1, pageIndex = 1):
+        try:
+            params = "method=getOrders&accesskey=%s&tradeType=%s&currency=%s&pageIndex=%s" % (self.mykey, t, currency, pageIndex)
+            path = 'getOrders'
+            
+            obj = self.__api_call(path, params)
+            #print obj
+            return obj
+        except Exception,ex:
+            print ex
+            return None
+        
 
         
 if __name__ == '__main__':

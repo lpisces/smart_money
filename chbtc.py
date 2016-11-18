@@ -12,6 +12,8 @@ import hashlib
 import os
 import math
 import api
+from multiprocessing import Pool
+from multiprocessing.dummy import Pool as ThreadPool
 
 access_key    = 'b45c8123-c3d6-418c-be71-96554a21cd9a'
 access_secret = '39460515-9d51-447e-a0c5-50664242e69f'
@@ -118,6 +120,10 @@ def _v(k, f):
     r.append(math.sqrt(a+b+c))
   return r[0]
 
+def __v(item):
+  k, f = item
+  return _v(k, f)
+
 def cond():
   cond = []
   cond.append(
@@ -174,6 +180,53 @@ def _mkdir(path):
     print e
     return False
 
+def _cancel(currency):
+  chbtc_api = api.chbtc_api(access_key, access_secret)
+  buy_orders = chbtc_api.get_orders(currency, 1)
+  sell_orders = chbtc_api.get_orders(currency, 0)
+  orders = buy_orders + sell_orders
+  for o in orders:
+    if o["status"] not in [2, 1]:
+      retry = 3
+      while retry > 0:
+        try:
+          r = cancel_order(o["id"], currency)
+          print "cancel%s" % (o["id"], )
+          if r["code"] != "1000":
+            retry -= 1
+            continue
+        except Exception as e:
+          print e
+          retry -= 1
+          continue
+
+def _order(currency, t = "b", retry = 3):
+  _cancel(currency)
+  while retry > 0:
+    try:
+      r = order(currency, "b")
+      if r == False:
+        return False
+      if r["code"] != "1000":
+        retry -= 1
+        continue
+    except Exception as e:
+      print e
+      retry -= 1
+      continue
+  time.sleep(1)
+  if retry > 0:
+    try:
+      info = get_order(r["id"], currency)
+      if info["status"] != 2:
+        time.sleep(1)
+        return _order(currency, t)
+    except:
+      return False
+    return r["id"]
+  return False
+
+         
 def account():
   chbtc_api = api.chbtc_api(access_key, access_secret)
   account = chbtc_api.query_account()
@@ -208,11 +261,11 @@ def order(currency, t = "b"):
     price = "%.3f" % (buy, )
     amount = cur
 
-  if amount < 0.001 and t == "b":
+  if float(amount) < 0.001 and t == 1:
     print "no money left."
     return False
 
-  if cur < 0.001 and t == "s":
+  if float(cur) < 0.001 and t == 0:
     print "nothing to sell."
     return False
 
@@ -236,70 +289,75 @@ def _tick(currency, retry = 5):
 
 def get_feature(c):
   cond_dir = "%s_%s_%s_%s" % (c["currency"], c["t"], c["n"], c["increase"])
-  _mkdir("./data/feature/%s" % (cond_dir, ))
+  feature_dir = "./data/feature/%s" % (cond_dir, )
+  _mkdir(feature_dir)
   _k = k(c["currency"], c["t"], c["since"], c["size"])
+  features = []
+  # feature size
+  f_size = 30 
   for i in pick(_k, c["n"], c["increase"]):
-    f_file = "./data/feature/%s/%s" % (cond_dir, i)
-    if not os.path.isfile(f_file):
+    feature_file = "%s/%s" % (feature_dir, i)
+    if not os.path.isfile(feature_file):
       f = feature(c["currency"], c["t"], i - 1000 * str2sec(c["t"]) * (f_size + 970), f_size + 970)
       md5 = hashlib.md5(json.dumps(f)).hexdigest()
-      with open(f_file, "w") as fd:
+      print md5
+      with open(feature_file, "w") as fd:
         fd.write(json.dumps(f))
+    else:
+      with open(feature_file, "r") as fd:
+        f = json.loads(fd.read())
+        md5 = hashlib.md5(json.dumps(f)).hexdigest()
+        print md5
+
+  for j in [f for f in os.listdir(feature_dir) if os.path.isfile("%s/%s" % (feature_dir, f))]:
+    with open("%s/%s" % (feature_dir, j), "r") as fd:
+      features.append(json.loads(fd.read()))
+  return features
+
+def run():
+  #print account()
+  b = False
+  trade_dir = "./data/trade"
+  _mkdir(trade_dir)
+
+  try:
+    oid = [f for f in os.listdir(trade_dir) if os.path.isfile("%s/%s" % (trade_dir, f))].sort()[-1]
+    with open("%s/%s" % (trade_dir, oid), "r") as fd:
+      t = json.loads(fd.read())
+    _k = k(t["currency"], t["t"], t["since"], t["size"])
+    order_info = get_order(oid, currency)
+    if float(_k[-1][4]) / float(order_info["price"]) * 100 - 100 > t["increase"] or int(order_info["trade_date"]) + int(t["n"]) * 1000 * str2sec(t["t"]) > int(_k[-1][0]):
+      _order(t["currency"], "s")
+  except Exception as e:
+    print "no file"
+    print e
+  
+
+  for c in cond()[:1]:
+    if b:
+      continue
+    _k = k(c["currency"], c["t"], c["since"], c["size"])
+    features = get_feature(c)
+    pool = ThreadPool(16)
+    vs = pool.map(__v, [(_k, f) for f in features])
+    pool.close() 
+    pool.join()
+
+    for i in range(len(features)):
+      print "condition:\t%s" % (c, )
+      print "picked value:\t%.6f" % (features[i]["v"], )
+      print "current values:\t%.6f" % (vs[i])
+      #if vs[i] < features[i]["v"]:
+      if True:
+        b = True
+        print "a"
+        r = _order(c["currency"], "b")
+        print "b"
+        print "%s/%s" % ("r", r)
+        if r != False:
+          with open("%s/%s" % (trade_dir, r), "w") as fd:
+            fd.write(json.dumps(c))
+        break
 
 if __name__ == "__main__":
-  f_size = 30
-  for c in cond()[:1]:
-    cond_dir = "%s_%s_%s_%s" % (c["currency"], c["t"], c["n"], c["increase"])
-    _mkdir("./data/feature/%s" % (cond_dir, ))
-    _mkdir("./data/trade/%s" % (cond_dir, ))
-    _k = k(c["currency"], c["t"], c["since"], c["size"])
-
-    for i in pick(_k, c["n"], c["increase"]):
-      f_file = "./data/feature/%s/%s" % (cond_dir, i)
-      if not os.path.isfile(f_file):
-        f = feature(c["currency"], c["t"], i - 1000 * str2sec(c["t"]) * (f_size + 970), f_size + 970)
-        md5 = hashlib.md5(json.dumps(f)).hexdigest()
-        with open(f_file, "w") as fd:
-          fd.write(json.dumps(f))
-
-    _c = [i[4] for i in _k]
-    _c = [j / _c[0] for j in _c]
-    diff, dea, _macd = macd(np.array(_c))
-    for j in [f for f in os.listdir("./data/feature/%s" % (cond_dir, )) if os.path.isfile(os.path.join("./data/feature/%s" % (cond_dir, ), f))]:
-      with open(os.path.join("./data/feature/%s/" % (cond_dir, ), j), "r") as feature_file:
-        fea = json.loads(feature_file.read())
-        v = _v(_k, fea)
-        #if v < fea["v"]:
-        if True:
-          while True:
-            r = order(c["currency"], "b")
-            if r["code"] == 1000:
-              o = get_order(r["id"], c["currency"])
-              if o["status"] != 2:
-                cancel_order(r["id"], c["currency"])
-              else:
-                break
-          print "BUY"
-          with open("./data/trade/%s/%s" % (cond_dir, _k[-1][0]), "w") as t:
-            t.write(json.dumps(r))
-        for jj in [f for f in os.listdir("./data/trade/%s" % (cond_dir, )) if os.path.isfile(os.path.join("./data/trade/%s" % (cond_dir, ), f))]:
-          with open(os.path.join("./data/trade/%s/" % (cond_dir, ), jj), "r+") as trade_file: 
-            trade = json.loads(trade_file.read())
-            if True:
-            #if trade["status"] == "open":
-              if (float(trade["price"]) / _k[-1][4]) * 100 - 100 > c["increase"] or int(jj) + str2sec(c["t"]) * 1000 * c["n"] < _k[-1][0]:
-                while True:
-                  r = order(c["currency"], "s")
-                  if r["code"] == 1000:
-                    o = get_order(r["id"], c["currency"])
-                    print o
-                    if o["status"] != 2:
-                      cancel_order(r["id"], c["currency"])
-                    else:
-                      break
-                print "SELL"
-                trade["status"] == "close"
-                trade_file.seek(0)
-                trade_file.write(json.dumps(trade))
-                trade_file.truncate()
-            
+  run()
