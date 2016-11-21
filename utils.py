@@ -6,6 +6,7 @@ import requests
 import time
 import talib
 import os
+import hashlib
 
 def kline(currency = "btc_cny", t = "5min", since  = "", size = 1000, retry = 5):
   url = "http://api.chbtc.com/data/v1/kline?currency=%s&type=%s&since=%s&size=%s" % (currency, t, since, size)
@@ -64,3 +65,5 @@ def mkdir(path):
     print e
     return False
 
+if __name__ == "__main__":
+  pass

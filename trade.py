@@ -11,7 +11,7 @@ import hashlib
 import json
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
-import time
+import time, datetime
  
 def pick(k, condition):
   """
@@ -27,48 +27,74 @@ def pick(k, condition):
   预定义条件
   """
 
-  n, increase = condition["n"], condition["increase"]
-  c = [i[4] for i in k]
-  h = [i[2] for i in k]
-  r = [0, ] * n
+  n, increase, feature_size = condition["n"], condition["increase"], condition["feature_size"]
+  c = [i[4] for i in k[:-1]]
+  h = [i[2] for i in k[:-1]]
+  r = [0, ] * (n + feature_size)
   ret = []
   for i in range(len(c)):
-    if i < n:
+    if i < n + feature_size:
       continue
     if max(r[i-n:i]) == 1:
       r.append(0)
       continue
-    if i + n < len(c):
-      if max(h[i:i+n])/c[i] > (100 + increase) / 100.0:
+    if i + n + 1< len(c):
+      if max(h[i+1:i+n+1])/c[i] > (100 + increase) / 100.0:
         r.append(1)
         ret.append(k[i][0])
       else:
         r.append(0)
+    else:
+      break
   return list(set(ret))
 
 def mfeature(c):
-  print c
+  f = feature(c["k"], c["point"], c["feature_size"])
+  return f
   try:
-    f = feature(c["currency"], c["t"], c["since"], c["size"], c["feature_size"])
-  except:
-    time.sleep(5)
+    #f = feature(c["currency"], c["t"], c["since"], c["size"], c["feature_size"])
+    f = feature(c["k"], c["point"], c["feature_size"])
+    return f
+  except Exception as e:
+    print e
+    time.sleep(3)
     return mfeature(c)
 
-def feature(currency, t, since, size, feature_size):
-  _k = utils.kline(currency, t, since, size)
-  c = [i[4] for i in _k]
+#def feature(currency, t, since, size, feature_size):
+#  _k = utils.kline(currency, t, since, size)
+#  c = [i[4] for i in _k]
+#  c = [j / c[0] for j in c]
+#  diff, dea, _macd = utils.macd(np.array(c))
+#  f = {}
+#  f["diff"] = list(diff[-1*size:])
+#  f["dea"] = list(dea[-1*size:])
+#  f["macd"] = list(_macd[-1*size:])
+#  _k2 = utils.kline(currency, t, since - 1000 * utils.str2sec(t) * size, size)
+#  f["v"] = feature_benchmark(_k2, f, feature_size)
+#  return f
+
+def feature(k, point, feature_size):
+  c = [i[4] for i in k[:-1]]
   c = [j / c[0] for j in c]
   diff, dea, _macd = utils.macd(np.array(c))
   f = {}
-  f["diff"] = list(diff[-1*size:])
-  f["dea"] = list(dea[-1*size:])
-  f["macd"] = list(_macd[-1*size:])
-  _k2 = utils.kline(currency, t, since - 1000 * utils.str2sec(t) + size, size)
-  f["v"] = feature_benchmark(_k2, f, feature_size)
+  for ki in range(len(c)):
+    if k[ki][0] == point:
+      break
+  f["diff"] = list(diff[ki - feature_size:ki])
+  f["dea"] = list(dea[ki - feature_size:ki])
+  f["macd"] = list(_macd[ki - feature_size:ki])
+  f["v"] = feature_benchmark(k, f, feature_size)
+  #print "".join(hashlib.md5(json.dumps(f)).hexdigest())
+  #print point
+  #print "".join(hashlib.md5(json.dumps(k[:-1])).hexdigest())
+  #print k[:-1]
+  #print point
+  #print ki - feature_size, ki
   return f
 
 def feature_benchmark(k, f, size, p = 99.5):
-  c = [i[4] for i in k]
+  c = [i[4] for i in k[:-1]]
   c = [j / c[0] for j in c]
   diff, dea, _macd = utils.macd(np.array(c))
   r = []
@@ -85,22 +111,42 @@ def feature_benchmark(k, f, size, p = 99.5):
   return r[int(len(r) * (100 - p) / 100.0)]
 
 def features(condition):
-  k = utils.kline(condition["currency"], condition["t"])
+  k = utils.kline(condition["currency"], condition["t"], "", condition["size"])
   points = pick(k, condition)
   box = []
   for i in points:
     p = {}
-    p["currency"], p["t"], p["since"], p["size"], p["feature_size"] = condition["currency"], condition["t"], i - 1000 * utils.str2sec(condition["t"]) * condition["size"], condition["size"], 30
+    #p["currency"], p["t"], p["since"], p["size"], p["feature_size"] = condition["currency"], condition["t"], i - 1000 * utils.str2sec(condition["t"]) * condition["size"], condition["size"], 30
+    p["k"], p["point"], p["feature_size"] = k, i, condition["feature_size"]
     box.append(p)
 
-  pool = ThreadPool(16)
+  pool = ThreadPool(1)
   feas = pool.map(mfeature, box)
   pool.close() 
   pool.join()
-  print len(feas)
-  
-#    content = json.dumps(f)
-#    digest = hashlib.md5(content).hexdigest()
+
+  conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
+  c = conn.cursor()
+  feature_items = []
+  for f in range(len(feas)):
+    content = json.dumps(feas[f])
+    digest = "".join(hashlib.md5(content).hexdigest())
+    point = points[f]
+    c.execute("select content from features where digest = ? or point = ?", (digest, point))
+    if c.fetchone() != None:
+      print "digest(%s) or point(%s) exits." % (digest, point)
+      print datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S')
+      continue
+
+    currency = condition["currency"]
+    size = condition["size"]
+    n = condition["n"]
+    increase = condition["increase"]
+    feature_size = 30
+    feature_items.append((digest, content, condition["currency"], condition["t"], condition["size"], condition["n"], condition["increase"], feature_size, point))
+  c.executemany("insert into features values (?, ?, ?, ?, ?, ?, ?, ?, ?)", feature_items)
+  conn.commit()
+  conn.close()
 
 def init_db():
   utils.mkdir(config.db_dir)
@@ -112,9 +158,8 @@ def init_db():
   conn.close()
 
 def run():
-  conditions = config.conditions
+  conditions = config.conditions[:1]
   for c in conditions:
-    #k = utils.kline(c["currency"], c["t"])
     features(c)
 
 

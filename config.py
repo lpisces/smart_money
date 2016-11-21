@@ -16,7 +16,8 @@ conditions = [
     "since": "",
     "size": 1000,
     "n": 5,
-    "increase": 1
+    "increase": 1,
+    "feature_size": 30
   },
   {
     "currency": "btc_cny",
@@ -24,7 +25,8 @@ conditions = [
     "since": "",
     "size": 1000,
     "n": 5,
-    "increase": 0.8
+    "increase": 0.8,
+    "feature_size": 30
   },
   {
     "currency": "btc_cny",
@@ -32,7 +34,8 @@ conditions = [
     "since": "",
     "size": 1000,
     "n": 5,
-    "increase": 0.5
+    "increase": 0.5,
+    "feature_size": 30
   },
   {
     "currency": "btc_cny",
@@ -40,6 +43,7 @@ conditions = [
     "since": "",
     "size": 1000,
     "n": 5,
-    "increase": 0.3
+    "increase": 0.3,
+    "feature_size": 30
   }
 ]
