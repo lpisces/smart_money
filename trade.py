@@ -33,9 +33,9 @@ def pick(k, condition):
   r = [0, ] * (n + feature_size)
   ret = []
   for i in range(len(c)):
-    if i < n + feature_size:
+    if i < feature_size:
       continue
-    if max(r[i-n:i]) == 1:
+    if max(r[-n:]) == 1:
       r.append(0)
       continue
     if i + n + 1< len(c):
@@ -85,6 +85,7 @@ def feature(k, point, feature_size):
   f["dea"] = list(dea[ki - feature_size:ki])
   f["macd"] = list(_macd[ki - feature_size:ki])
   f["v"] = feature_benchmark(k, f, feature_size)
+  #print f["v"]
   #print "".join(hashlib.md5(json.dumps(f)).hexdigest())
   #print point
   #print "".join(hashlib.md5(json.dumps(k[:-1])).hexdigest())
@@ -93,7 +94,7 @@ def feature(k, point, feature_size):
   #print ki - feature_size, ki
   return f
 
-def feature_benchmark(k, f, size, p = 99.5):
+def feature_benchmark(k, f, size, p = 99):
   c = [i[4] for i in k[:-1]]
   c = [j / c[0] for j in c]
   diff, dea, _macd = utils.macd(np.array(c))
@@ -120,7 +121,7 @@ def features(condition):
     p["k"], p["point"], p["feature_size"] = k, i, condition["feature_size"]
     box.append(p)
 
-  pool = ThreadPool(1)
+  pool = ThreadPool(16)
   feas = pool.map(mfeature, box)
   pool.close() 
   pool.join()
@@ -133,8 +134,10 @@ def features(condition):
     digest = "".join(hashlib.md5(content).hexdigest())
     point = points[f]
     c.execute("select content from features where digest = ? or point = ?", (digest, point))
-    if c.fetchone() != None:
+    r = c.fetchone() 
+    if r != None:
       print "digest(%s) or point(%s) exits." % (digest, point)
+      print json.loads(r[0])["v"]
       print datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S')
       continue
 
@@ -147,6 +150,7 @@ def features(condition):
   c.executemany("insert into features values (?, ?, ?, ?, ?, ?, ?, ?, ?)", feature_items)
   conn.commit()
   conn.close()
+  return feature_items
 
 def init_db():
   utils.mkdir(config.db_dir)
@@ -158,9 +162,11 @@ def init_db():
   conn.close()
 
 def run():
-  conditions = config.conditions[:1]
+  conditions = config.conditions
+  items = []
   for c in conditions:
-    features(c)
+    items += features(c)
+  print len(items)
 
 
 if __name__ == "__main__":
@@ -168,4 +174,6 @@ if __name__ == "__main__":
     init_db()
   except:
     pass
-  run()
+  while True:
+    run()
+    time.sleep(5 * 60)
