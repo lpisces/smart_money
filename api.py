@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*- 
 
 import json, urllib2, hashlib,struct,sha,time
+import config
 
 class chbtc_api:
 
@@ -43,7 +44,6 @@ class chbtc_api:
 
   def __digest(self, aValue):
     value  = struct.pack("%ds" % len(aValue), aValue)
-    #print value
     h = sha.new()
     h.update(value)
     dg = h.hexdigest()
@@ -67,7 +67,7 @@ class chbtc_api:
         retry -= 1
     return None
 
-  def query_account(self):
+  def get_account_info(self):
     try:
       params = "method=getAccountInfo&accesskey="+self.mykey
       path = 'getAccountInfo'
@@ -118,9 +118,8 @@ class chbtc_api:
       return None
     
 if __name__ == '__main__':
-  access_key  = 'b45c8123-c3d6-418c-be71-96554a21cd9a'
-  access_secret = '39460515-9d51-447e-a0c5-50664242e69f'
-
+  access_key = config.access_key
+  access_secret = config.access_secret
   api = chbtc_api(access_key, access_secret)
+  print api.get_account_info()
 
-  print api.query_account()
