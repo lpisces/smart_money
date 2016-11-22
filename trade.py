@@ -172,9 +172,8 @@ def train_buy():
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
   k = {}
-  n = 0
-  for f in c.execute("select digest, content, currency, t, size, n, increase, feature_size, point from features"):
-    n += 1
+  c.execute("select digest, content, currency, t, size, n, increase, feature_size, point from features order by point")
+  for f in c.fetchall():
     digest, content, currency, t, size, n, increase, feature_size, point = f
     if "%s_%s_%s" % (currency, t, size) not in k:
       k["%s_%s_%s" % (currency, t, size)] = utils.kline(currency, t, "", size)
@@ -198,6 +197,14 @@ def train_buy():
       pass
   conn.close()
 
+def buy():
+  access_key = config.access_key
+  access_secret = config.access_secret
+  api = chbtc_api(access_key, access_secret)
+
+  account = api.get_account_info()
+  
+
 def train_sell():
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
@@ -212,6 +219,14 @@ def train_sell():
       print "sell %s @ %s" % (currency, tbuy)
   conn.close()
 
+def rank():
+  conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
+  c = conn.cursor()
+  c.execute("select digest, sum(sell - buy) as s from training where updated_at != 0 and updated_at > ? group by digest order by s desc", (int(time.time() * 1000) - 3 * 24 * 60 * 60 * 1000, ))
+  r = c.fetchall()  
+  conn.close()
+  return r
+
 def init_db():
   utils.mkdir(config.db_dir)
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
@@ -225,10 +240,12 @@ def init_db():
 def run():
   conditions = config.conditions
   now = int(time.time() * 1000) / 1000
-  print now
+  if now % 5 == 0:
+    print now
   if now % 300 == 0:
     for c in conditions:
       gen_features(c)
+    print rank()
 
   if now % 30 == 0:
     train_buy()
