@@ -94,7 +94,8 @@ def feature(k, point, feature_size):
   #print ki - feature_size, ki
   return f
 
-def feature_benchmark(k, f, size, p = 99):
+def feature_benchmark(k, f, size):
+  p = config.benchmark
   c = [i[4] for i in k[:-1]]
   c = [j / c[0] for j in c]
   diff, dea, _macd = utils.macd(np.array(c))
@@ -111,7 +112,22 @@ def feature_benchmark(k, f, size, p = 99):
   r.sort()
   return r[int(len(r) * (100 - p) / 100.0)]
 
-def features(condition):
+def kline_similarity(k, f, size):
+  c = [i[4] for i in k[:-1]]
+  c = [j / c[0] for j in c]
+  diff, dea, _macd = utils.macd(np.array(c))
+  r = []
+  for i in range(len(diff)):
+    a, b, c = 0, 0, 0  
+    if i != len(diff) - 1:
+      continue
+    for j in range(size):
+      a += math.pow(f["diff"][j] - diff[i-size+1+j], 2)
+      b += math.pow(f["dea"][j] - dea[i-size+1+j], 2)
+      c += math.pow(f["macd"][j] - _macd[i-size+1+j], 2)
+  return math.sqrt(a+b+c)
+
+def gen_features(condition):
   k = utils.kline(condition["currency"], condition["t"], "", condition["size"])
   points = pick(k, condition)
   box = []
@@ -136,9 +152,9 @@ def features(condition):
     c.execute("select content from features where digest = ? or point = ?", (digest, point))
     r = c.fetchone() 
     if r != None:
-      print "digest(%s) or point(%s) exits." % (digest, point)
-      print json.loads(r[0])["v"]
-      print datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S')
+      #print "digest(%s) or point(%s) exists." % (digest, point)
+      #print json.loads(r[0])["v"]
+      #print datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S')
       continue
 
     currency = condition["currency"]
@@ -152,22 +168,71 @@ def features(condition):
   conn.close()
   return feature_items
 
+def train_buy():
+  conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
+  c = conn.cursor()
+  k = {}
+  n = 0
+  for f in c.execute("select digest, content, currency, t, size, n, increase, feature_size, point from features"):
+    n += 1
+    digest, content, currency, t, size, n, increase, feature_size, point = f
+    if "%s_%s_%s" % (currency, t, size) not in k:
+      k["%s_%s_%s" % (currency, t, size)] = utils.kline(currency, t, "", size)
+
+    print "Comparing to %s @ %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'))
+    s = kline_similarity(k["%s_%s_%s" % (currency, t, size)], json.loads(content), feature_size)
+    v = float(json.loads(content)["v"])
+    if not math.isnan(s) and s <= v:
+      created_at = int(time.time() * 1000)
+      c.execute("select * from training where digest = ? and created_at > ? and updated_at = 0", (digest, created_at - 1000 * n * utils.str2sec(t)))
+      if len(c.fetchall()) > 0:
+        continue
+      print "Match"
+      ticker = utils.tick(currency)
+      buy, sell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
+      print "buy %s @ %s" % (currency, sell)
+      c.execute("Insert into training (created_at, updated_at, digest, buy, sell) values (?, 0, ?, ?, 0.0)", (created_at, digest, sell))
+      conn.commit()
+    else:
+      #print "Not Match"
+      pass
+  conn.close()
+
+def train_sell():
+  conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
+  c = conn.cursor()
+  for train in c.execute("select tid,created_at, updated_at, buy, sell, t, n, increase, currency from training, features where training.digest = features.digest and updated_at == 0"):
+    tid, created_at, updated_at, buy, sell, t, n, increase, currency = train
+    ticker = utils.tick(currency)
+    tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
+    print buy, tbuy, tbuy / buy * 100 - 100, increase, (int(time.time() * 1000) - created_at) / 1000
+    if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase):
+      c.execute("update training set updated_at = ?, sell = ? where tid = ?", (int(time.time() * 1000), tbuy, tid))
+      conn.commit()
+      print "sell %s @ %s" % (currency, tbuy)
+  conn.close()
+
 def init_db():
   utils.mkdir(config.db_dir)
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
   c.execute('''Create table features (digest text, content text, currency text, t text, size INTEGER, n INTEGER, increase real, feature_size INTEGER, point INTEGER)''')
-  c.execute('''Create table trade (created_at INTEGER, updated_at INTEGER, digest text, buy real default 0.0, sell real default 0.0)''')
+  c.execute('''Create table trade (tid INTEGER PRIMARY KEY, created_at INTEGER default 0, updated_at INTEGER default 0, digest text, buy real default 0.0, sell real default 0.0)''')
+  c.execute('''Create table training (tid INTEGER PRIMARY KEY, created_at INTEGER default 0, updated_at INTEGER default 0, digest text, buy real default 0.0, sell real default 0.0)''')
   conn.commit()
   conn.close()
 
 def run():
   conditions = config.conditions
-  items = []
-  for c in conditions:
-    items += features(c)
-  print len(items)
+  now = int(time.time() * 1000) / 1000
+  print now
+  if now % 300 == 0:
+    for c in conditions:
+      gen_features(c)
 
+  if now % 30 == 0:
+    train_buy()
+    train_sell()
 
 if __name__ == "__main__":
   try:
@@ -176,4 +241,4 @@ if __name__ == "__main__":
     pass
   while True:
     run()
-    time.sleep(5 * 60)
+    time.sleep(1)

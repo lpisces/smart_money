@@ -3,8 +3,10 @@
 
 import utils
 
-access_key  = 'b45c8123-c3d6-418c-be71-96554a21cd9a'
-access_secret = '39460515-9d51-447e-a0c5-50664242e69f'
+access_key  = ''
+access_secret = ''
+
+benchmark = 98
 
 db_dir = "./db"
 db_file = "chbtc_db"
