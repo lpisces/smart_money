@@ -190,11 +190,19 @@ def order(currency, t = "b", radio = 1.0):
   if t == "b":
     t = 1
     price = "%.3f" % (sell * 1.001, )
-    amount = "%.3f" % (b / sell * radio, )
+    #amount = "%.3f" % (b / sell * radio, )
+    amount = "%.3f" % (50.0 / sell * radio, )
   else:
     t = 0 
     price = "%.3f" % (buy * 0.999, )
-    amount = "%.3f" % (a * radio, )
+    #amount = "%.3f" % (a * radio, )
+    amount = "%.3f" % (0.01 * radio, )
+
+  if a < 0.01:
+    amount = "%.3f" % (a, )
+
+  if b < 50.0:
+    amount = "%.3f" % (b / (sell * 1.001), )
 
   if float(amount) < 0.001:
     return None
@@ -235,7 +243,7 @@ def train_buy():
     if "%s_%s_%s" % (currency, t, size) not in k:
       k["%s_%s_%s" % (currency, t, size)] = utils.kline(currency, t, "", size)
 
-    print "Comparing to %s @ %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'))
+    print "Comparing to %s @ %s %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'), increase)
     s = kline_similarity(k["%s_%s_%s" % (currency, t, size)], json.loads(content), feature_size)
     v = float(json.loads(content)["v"])
     if not math.isnan(s) and s <= v:
@@ -265,7 +273,7 @@ def real_buy():
     if "%s_%s_%s" % (currency, t, size) not in k:
       k["%s_%s_%s" % (currency, t, size)] = utils.kline(currency, t, "", size)
 
-    print "Real comparing to %s @ %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'))
+    print "Real comparing to %s @ %s %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'), increase)
     s = kline_similarity(k["%s_%s_%s" % (currency, t, size)], json.loads(content), feature_size)
     v = float(json.loads(content)["v"])
     if not math.isnan(s) and s <= v:
@@ -274,7 +282,7 @@ def real_buy():
       c.execute("select * from trade where digest = ? and created_at > ? and updated_at = 0", (digest, created_at - 1000 * n * utils.str2sec(t)))
       if len(c.fetchall()) > 0:
         continue
-      print "Match"
+      print "Real match"
       r = trade(currency, "b", 1.0)
       if r != False:
         #ticker = utils.tick(currency)
@@ -308,7 +316,7 @@ def real_sell():
     tid, created_at, updated_at, buy, sell, t, n, increase, currency = train
     ticker = utils.tick(currency)
     tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
-    print buy, tbuy, tbuy / buy * 100 - 100, increase, (int(time.time() * 1000) - created_at) / 1000
+    print "real", buy, tbuy, tbuy / buy * 100 - 100, increase, (int(time.time() * 1000) - created_at) / 1000
     if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase):
     #if True:
       r = trade(currency, "s", 1.0)
