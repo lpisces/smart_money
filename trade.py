@@ -168,6 +168,63 @@ def gen_features(condition):
   conn.close()
   return feature_items
 
+def check(ret):
+  if ret ==  None:
+    return False
+  if "code" in ret and str(ret["code"]) != "1000":
+    return False
+  return True
+
+def order(currency, t = "b", radio = 1.0):
+  access_key = config.access_key
+  access_secret = config.access_secret
+  chbtc = api.chbtcApi(access_key, access_secret)
+  account = chbtc.get_account_info()
+  a = float(account["result"]["balance"][currency.split("_")[0].upper()]["amount"])
+  b = float(account["result"]["balance"][currency.split("_")[-1].upper()]["amount"])
+
+  tick = utils.tick(currency)
+  sell = float(tick["ticker"]["sell"])
+  buy = float(tick["ticker"]["buy"])
+
+  if t == "b":
+    t = 1
+    price = "%.3f" % (sell * 1.001, )
+    amount = "%.3f" % (b / sell * radio, )
+  else:
+    t = 0 
+    price = "%.3f" % (buy * 0.999, )
+    amount = "%.3f" % (a * radio, )
+
+  if float(amount) < 0.001:
+    return None
+
+  r = chbtc.order(price, amount, t, currency)
+  return r
+
+def trade(currency, t = "b", radio = 1.0, retry = 5):
+  access_key = config.access_key
+  access_secret = config.access_secret
+  chbtc = api.chbtcApi(access_key, access_secret)
+  while retry > 0:
+    r = order(currency, t, radio)
+    time.sleep(2)
+    if check(r):
+      rr = chbtc.get_order(r["id"], currency)
+      if check(rr):
+        if rr["status"] in [2, ]:
+          return rr 
+        else:
+          chbtc.cancel_order(r["id"], currency) 
+          if rr["status"] == 3:
+            radio = radio * (rr["total_amount"] - rr["trade_amount"])/rr["total_amount"]
+          retry -= 1
+      else:
+        retry -= 1
+    else:
+      retry -= 1
+  return False
+
 def train_buy():
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
@@ -197,13 +254,38 @@ def train_buy():
       pass
   conn.close()
 
-def buy():
-  access_key = config.access_key
-  access_secret = config.access_secret
-  api = chbtc_api(access_key, access_secret)
+def real_buy():
+  conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
+  c = conn.cursor()
+  k = {}
+  digests = [i[0] for i in rank() if i[1] > 0]
+  c.execute("select digest, content, currency, t, size, n, increase, feature_size, point from features where digest in (%s)order by point" % (",".join('?'*len(digests)), ), digests)
+  for f in c.fetchall():
+    digest, content, currency, t, size, n, increase, feature_size, point = f
+    if "%s_%s_%s" % (currency, t, size) not in k:
+      k["%s_%s_%s" % (currency, t, size)] = utils.kline(currency, t, "", size)
 
-  account = api.get_account_info()
-  
+    print "Real comparing to %s @ %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'))
+    s = kline_similarity(k["%s_%s_%s" % (currency, t, size)], json.loads(content), feature_size)
+    v = float(json.loads(content)["v"])
+    if not math.isnan(s) and s <= v:
+    #if True:
+      created_at = int(time.time() * 1000)
+      c.execute("select * from trade where digest = ? and created_at > ? and updated_at = 0", (digest, created_at - 1000 * n * utils.str2sec(t)))
+      if len(c.fetchall()) > 0:
+        continue
+      print "Match"
+      r = trade(currency, "b", 1.0)
+      if r != False:
+        #ticker = utils.tick(currency)
+        #buy, sell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
+        print "real buy %s @ %s, amount %s" % (currency, r["price"], r['total_amount'])
+        c.execute("Insert into trade (created_at, updated_at, digest, buy, sell) values (?, 0, ?, ?, 0.0)", (r["trade_date"], digest, r["price"]))
+        conn.commit()
+    else:
+      #print "Not Match"
+      pass
+  conn.close()
 
 def train_sell():
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
@@ -219,10 +301,27 @@ def train_sell():
       print "sell %s @ %s" % (currency, tbuy)
   conn.close()
 
+def real_sell():
+  conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
+  c = conn.cursor()
+  for train in c.execute("select tid,created_at, updated_at, buy, sell, t, n, increase, currency from trade, features where trade.digest = features.digest and updated_at == 0"):
+    tid, created_at, updated_at, buy, sell, t, n, increase, currency = train
+    ticker = utils.tick(currency)
+    tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
+    print buy, tbuy, tbuy / buy * 100 - 100, increase, (int(time.time() * 1000) - created_at) / 1000
+    if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase):
+    #if True:
+      r = trade(currency, "s", 1.0)
+      if r != False:
+        c.execute("update trade set updated_at = ?, sell = ? where tid = ?", (r["trade_date"], r["price"], tid))
+        conn.commit()
+        print "real sell %s @ %s, money %s" % (currency, r["price"], r["trade_money"])
+  conn.close()
+
 def rank():
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
-  c.execute("select digest, sum(sell - buy) as s from training where updated_at != 0 and updated_at > ? group by digest order by s desc", (int(time.time() * 1000) - 3 * 24 * 60 * 60 * 1000, ))
+  c.execute("select digest, sum(sell - buy) as s from training where updated_at != 0 and updated_at > ? group by digest order by s desc", (int(time.time() * 1000) - 30 * 24 * 60 * 60 * 1000, ))
   r = c.fetchall()  
   conn.close()
   return r
@@ -249,7 +348,10 @@ def run():
 
   if now % 30 == 0:
     train_buy()
+    real_buy()
+
     train_sell()
+    real_sell()
 
 if __name__ == "__main__":
   try:
