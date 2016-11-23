@@ -3,8 +3,9 @@
 
 import json, urllib2, hashlib,struct,sha,time
 import config
+import utils
 
-class chbtc_api:
+class chbtcApi:
 
   def __init__(self, mykey, mysecret):
     self.mykey  = mykey
@@ -63,6 +64,7 @@ class chbtc_api:
         doc = json.loads(response.read())
         return doc
       except Exception,ex:
+        print ex
         time.sleep(1)
         retry -= 1
     return None
@@ -71,7 +73,7 @@ class chbtc_api:
     try:
       params = "method=getAccountInfo&accesskey="+self.mykey
       path = 'getAccountInfo'
-      obj = self.__api_call(path, params)
+      obj = self.__api_call(path, str(params))
       return obj
     except Exception,ex:
       print ex
@@ -81,7 +83,7 @@ class chbtc_api:
     try:
       params = "method=order&accesskey=%s&price=%s&amount=%s&tradeType=%s&currency=%s" % (self.mykey, price, amount, t, currency)
       path = 'order'
-      obj = self.__api_call(path, params)
+      obj = self.__api_call(path, str(params))
       return obj
     except Exception,ex:
       print ex
@@ -89,9 +91,9 @@ class chbtc_api:
 
   def get_order(self, oid, currency):
     try:
-      params = "method=getOrder&id=%s&currency=%s&accesskey=%s" % (oid, currency, self.mykey)
+      params = "method=getOrder&accesskey=%s&id=%s&currency=%s" % (self.mykey, oid, currency)
       path = 'getOrder'
-      obj = self.__api_call(path, params)
+      obj = self.__api_call(path, str(params))
       return obj
     except Exception,ex:
       print ex
@@ -99,9 +101,9 @@ class chbtc_api:
 
   def cancel_order(self, oid, currency):
     try:
-      params = "method=cancelOrder&id=%s&currency=%s&accesskey=%s" % (oid, currency, self.mykey)
+      params = "method=cancelOrder&accesskey=%s&id=%s&currency=%s" % (self.mykey, oid, currency)
       path = 'cancelOrder'
-      obj = self.__api_call(path, params)
+      obj = self.__api_call(path, str(params))
       return obj
     except Exception,ex:
       print ex
@@ -111,15 +113,132 @@ class chbtc_api:
     try:
       params = "method=getOrders&accesskey=%s&tradeType=%s&currency=%s&pageIndex=%s" % (self.mykey, t, currency, pageIndex)
       path = 'getOrders'
-      obj = self.__api_call(path, params)
+      obj = self.__api_call(path, str(params))
       return obj
     except Exception,ex:
       print ex
       return None
+
+def check(ret):
+  if ret ==  None:
+    return False
+  if "code" in ret and str(ret["code"]) != "1000":
+    return False
+  return True
     
 if __name__ == '__main__':
   access_key = config.access_key
   access_secret = config.access_secret
-  api = chbtc_api(access_key, access_secret)
-  print api.get_account_info()
+  api = chbtcApi(access_key, access_secret)
+  r = api.get_account_info()
+  if check(r):
+    account = r 
+    print "API get_account_info OK"
+  else:
+    print "API get_account_info error"
+    exit()
+
+  currency = "btc_cny"
+
+
+  ids = []
+  r = api.get_orders(currency, 1, 1)
+  if check(r):
+    for i in r:
+      if i["status"] not in [1,2]:
+        ids.append(i["id"])
+    print "API get_orders OK"
+  else:
+    print "API get_orders error"
+    exit()
+
+  r = api.get_orders(currency, 0, 1)
+  if check(r):
+    for i in r:
+      if i["status"] not in [1,2]:
+        ids.append(i["id"])
+    print "API get_orders OK"
+  else:
+    print "API get_orders error"
+    exit()
+
+  for i in ids:
+    r = api.cancel_order(i, currency)
+    if check(r):
+      print "API cancel_order OK"
+    else:
+      print r["message"]
+      print "API cancel_order error"
+
+
+  a = float(account["result"]["balance"][currency.split("_")[0].upper()]["amount"])
+  b = float(account["result"]["balance"][currency.split("_")[-1].upper()]["amount"])
+
+  tick = utils.tick(currency)
+  sell = float(tick["ticker"]["sell"])
+  buy = float(tick["ticker"]["buy"])
+
+  amount = "%.3f" % (b / sell, )
+  if float(amount) < 0.001:
+    amount = "%.3f" % (a, )
+    price = buy * 1.1
+    t = 0
+    if float(amount) < 0.001:
+      print "no money or btc for test"
+      exit()
+  else:
+    price = sell * 0.9
+    t = 1
+
+  if float(amount) > 0.01:
+    amount = 0.01
+  r = api.order(price, amount, t, currency)
+  if check(r):
+    print "API order OK"
+  else:
+    print "API order error"
+    print r["code"], r["message"]
+    exit()
+
+  order_id = r["id"]
+  r = api.get_order(order_id, currency)
+  if check(r):
+    print r
+    print "API get_order OK"
+  else:
+    print r["message"]
+    print "API get_order error"
+    exit()
+
+  ids = []
+  r = api.get_orders(currency, 1, 1)
+  if check(r):
+    for i in r:
+      if i["status"] not in [1,2]:
+        ids.append(i["id"])
+    print "API get_orders OK"
+  else:
+    print "API get_orders error"
+    exit()
+  r = api.get_orders(currency, 0, 1)
+  if check(r):
+    for i in r:
+      if i["status"] not in [1,2]:
+        ids.append(i["id"])
+    print "API get_orders OK"
+  else:
+    print "API get_orders error"
+    exit()
+
+  for i in ids:
+    r = api.cancel_order(i, currency)
+    if check(r):
+      print "API cancel_order OK"
+    else:
+      print r["message"]
+      print "API cancel_order error"
+    
+  
+  
+
 
