@@ -252,7 +252,7 @@ def train_buy():
     if "%s_%s_%s" % (currency, t, size) not in k:
       k["%s_%s_%s" % (currency, t, size)] = utils.kline(currency, t, "", size)
 
-    print "Comparing to %s @ %s %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'), increase)
+    print "Comparing to %s @ %s %s %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'), increase, t)
     s = kline_similarity(k["%s_%s_%s" % (currency, t, size)], json.loads(content), feature_size)
     v = float(json.loads(content)["v"])
     if not math.isnan(s) and s <= v:
@@ -282,7 +282,7 @@ def real_buy():
     if "%s_%s_%s" % (currency, t, size) not in k:
       k["%s_%s_%s" % (currency, t, size)] = utils.kline(currency, t, "", size)
 
-    print "Real comparing to %s @ %s %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'), increase)
+    print "Real comparing to %s @ %s %s %s" % (digest, datetime.datetime.fromtimestamp(point/1000).strftime('%Y-%m-%d %H:%M:%S'), increase, t)
     s = kline_similarity(k["%s_%s_%s" % (currency, t, size)], json.loads(content), feature_size)
     v = float(json.loads(content)["v"])
     if not math.isnan(s) and s <= v:
@@ -312,7 +312,7 @@ def train_sell():
     tid, created_at, updated_at, buy, sell, t, n, increase, currency = train
     ticker = utils.tick(currency)
     tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
-    print buy, tbuy, tbuy / buy * 100 - 100, increase, (int(time.time() * 1000) - created_at) / 1000
+    print buy, tbuy, tbuy / buy * 100 - 100, increase, t, (int(time.time() * 1000) - created_at) / 1000
     if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase) or tbuy / buy * 100 - 100 < -1.0 * float(increase):
       c.execute("update training set updated_at = ?, sell = ? where tid = ?", (int(time.time() * 1000), tbuy, tid))
       conn.commit()
@@ -326,7 +326,7 @@ def real_sell():
     tid, created_at, updated_at, buy, sell, t, n, increase, currency = train
     ticker = utils.tick(currency)
     tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
-    print "real", buy, tbuy, tbuy / buy * 100 - 100, increase, (int(time.time() * 1000) - created_at) / 1000
+    print "real", buy, tbuy, tbuy / buy * 100 - 100, increase, t, (int(time.time() * 1000) - created_at) / 1000
     if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase) or tbuy / buy * 100 - 100 < -1.0 * float(increase):
     #if True:
       r = trade(currency, "s", 1.0)
