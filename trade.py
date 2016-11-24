@@ -189,19 +189,19 @@ def order(currency, t = "b", radio = 1.0):
 
   if t == "b":
     t = 1
-    price = "%.3f" % (sell * 1.001, )
+    price = "%.3f" % (sell * 1.0001, )
     #amount = "%.3f" % (b / sell * radio, )
     amount = "%.3f" % (50.0 / sell * radio, )
   else:
     t = 0 
-    price = "%.3f" % (buy * 0.999, )
+    price = "%.3f" % (buy * 0.9999, )
     #amount = "%.3f" % (a * radio, )
     amount = "%.3f" % (0.01 * radio, )
 
-  if a < 0.01:
+  if a < 0.01 and t == 0:
     amount = "%.3f" % (a, )
 
-  if b < 50.0:
+  if b < 50.0 and t == 1:
     amount = "%.3f" % (b / (sell * 1.001), )
 
   if float(amount) < 0.001:
@@ -284,6 +284,7 @@ def real_buy():
         continue
       print "Real match"
       r = trade(currency, "b", 1.0)
+      print r
       if r != False:
         #ticker = utils.tick(currency)
         #buy, sell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
@@ -303,7 +304,7 @@ def train_sell():
     ticker = utils.tick(currency)
     tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
     print buy, tbuy, tbuy / buy * 100 - 100, increase, (int(time.time() * 1000) - created_at) / 1000
-    if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase):
+    if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase) or tbuy / buy * 100 - 100 < -1.0 * float(increase):
       c.execute("update training set updated_at = ?, sell = ? where tid = ?", (int(time.time() * 1000), tbuy, tid))
       conn.commit()
       print "sell %s @ %s" % (currency, tbuy)
@@ -317,7 +318,7 @@ def real_sell():
     ticker = utils.tick(currency)
     tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
     print "real", buy, tbuy, tbuy / buy * 100 - 100, increase, (int(time.time() * 1000) - created_at) / 1000
-    if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase):
+    if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * n * 1000 or tbuy / buy * 100 - 100 > float(increase) or tbuy / buy * 100 - 100 < -1.0 * float(increase):
     #if True:
       r = trade(currency, "s", 1.0)
       if r != False:
