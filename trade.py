@@ -233,6 +233,15 @@ def trade(currency, t = "b", radio = 1.0, retry = 5):
       retry -= 1
   return False
 
+def net_asset():
+  access_key = config.access_key
+  access_secret = config.access_secret
+  chbtc = api.chbtcApi(access_key, access_secret)
+  account = chbtc.get_account_info()
+  if check(account):
+    return account["result"]["netAssets"]
+  return False
+
 def train_buy():
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
@@ -335,6 +344,16 @@ def rank():
   conn.close()
   return r
 
+def clear(currency):
+  conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
+  c = conn.cursor()
+  c.execute("select tid,created_at, updated_at, buy, sell, t, n, increase, currency from trade, features where trade.digest = features.digest and updated_at == 0")
+  r = c.fetchall()  
+  if len(r) == 0:
+    trade(currency, "s", 1.0)
+  conn.close()
+  
+
 def init_db():
   utils.mkdir(config.db_dir)
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
@@ -348,19 +367,22 @@ def init_db():
 def run():
   conditions = config.conditions
   now = int(time.time() * 1000) / 1000
-  if now % 5 == 0:
-    print now
-  if now % 300 == 0:
-    for c in conditions:
-      gen_features(c)
-    print rank()
-
-  if now % 30 == 0:
-    train_buy()
-    real_buy()
-
-    train_sell()
-    real_sell()
+  try:
+    if now % 5 == 0:
+      print now % 300, now % 15
+    if now % 300 == 0:
+      for c in conditions:
+        gen_features(c)
+  
+    if now % 15 == 0:
+      train_buy()
+      real_buy()
+  
+      train_sell()
+      real_sell()
+      clear("btc_cny")
+  except Exception as e:
+    print e
 
 if __name__ == "__main__":
   try:
