@@ -189,12 +189,12 @@ def order(currency, t = "b", radio = 1.0):
 
   if t == "b":
     t = 1
-    price = "%.3f" % (sell * 0.9998, )
+    price = "%.3f" % (sell * 0.9999, )
     #amount = "%.3f" % (b / sell * radio, )
     amount = "%.3f" % (50.0 / sell * radio, )
   else:
     t = 0 
-    price = "%.3f" % (buy * 1.0002, )
+    price = "%.3f" % (buy * 1.0001, )
     #amount = "%.3f" % (a * radio, )
     amount = "%.3f" % (0.01 * radio, )
 
@@ -223,9 +223,7 @@ def trade(currency, t = "b", radio = 1.0, retry = 5):
         if rr["status"] in [2, ]:
           return rr 
         else:
-          rrr = chbtc.cancel_order(r["id"], currency) 
-          if str(rrr["code"]) != "1000":
-            return rr
+          chbtc.cancel_order(r["id"], currency) 
           if rr["status"] == 3:
             radio = radio * (rr["total_amount"] - rr["trade_amount"])/rr["total_amount"]
           retry -= 1
@@ -376,19 +374,17 @@ def run():
   try:
     if now % 5 == 0:
       print now % 300, now % 15
-#    if now % 300 == 0:
-#      for c in conditions:
-#        gen_features(c)
+    if now % 300 == 0:
+      for c in conditions:
+        gen_features(c)
   
-    if now % 10 == 0:
-
-      #train_sell()
-      real_sell()
-
-      #train_buy()
-      real_buy()
+    if now % 15 == 0:
+      train_buy()
+      #real_buy()
   
-      clear("btc_cny")
+      train_sell()
+      #real_sell()
+      #clear("btc_cny")
   except Exception as e:
     print e
 
