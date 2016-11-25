@@ -224,7 +224,7 @@ def trade(currency, t = "b", radio = 1.0, retry = 5):
           return rr 
         else:
           rrr = chbtc.cancel_order(r["id"], currency) 
-          if str(rrr["code"]) != "1000":
+          if check(rrr) == False:
             return rr
           if rr["status"] == 3:
             radio = radio * (rr["total_amount"] - rr["trade_amount"])/rr["total_amount"]
@@ -274,6 +274,22 @@ def train_buy():
   conn.close()
 
 def real_buy():
+
+  access_key = config.access_key
+  access_secret = config.access_secret
+  chbtc = api.chbtcApi(access_key, access_secret)
+  account = chbtc.get_account_info()
+  currency = "btc_cny"
+  a = float(account["result"]["balance"][currency.split("_")[0].upper()]["amount"])
+  b = float(account["result"]["balance"][currency.split("_")[-1].upper()]["amount"])
+
+  ticker = utils.tick(currency)
+  tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
+
+  if float(b) / tsell < 0.001:
+    print "out of money"
+    return False
+
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
   k = {}
@@ -308,6 +324,19 @@ def real_buy():
   conn.close()
 
 def train_sell():
+
+  access_key = config.access_key
+  access_secret = config.access_secret
+  chbtc = api.chbtcApi(access_key, access_secret)
+  account = chbtc.get_account_info()
+  currency = "btc_cny"
+  a = float(account["result"]["balance"][currency.split("_")[0].upper()]["amount"])
+  b = float(account["result"]["balance"][currency.split("_")[-1].upper()]["amount"])
+
+  if a == 0.0:
+    print "out of currency"
+    return False
+
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
   for train in c.execute("select tid,created_at, updated_at, buy, sell, t, n, increase, currency from training, features where training.digest = features.digest and updated_at == 0"):
@@ -347,16 +376,31 @@ def rank():
   return r
 
 def clear(currency):
+
+  access_key = config.access_key
+  access_secret = config.access_secret
+  chbtc = api.chbtcApi(access_key, access_secret)
+  account = chbtc.get_account_info()
+  currency = "btc_cny"
+  a = float(account["result"]["balance"][currency.split("_")[0].upper()]["amount"])
+  b = float(account["result"]["balance"][currency.split("_")[-1].upper()]["amount"])
+
   conn = sqlite3.connect("%s/%s" % (config.db_dir, config.db_file))
   c = conn.cursor()
   c.execute("select tid,created_at, updated_at, buy, sell, t, n, increase, currency from trade, features where trade.digest = features.digest and updated_at == 0")
   r = c.fetchall()  
-  if len(r) == 0:
+  if len(r) == 0 and a > 0:
     trade(currency, "s", 1.0)
+
   for i in r:
     tid, created_at, updated_at, buy, sell, t, n, increase, currency = i
-    if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * (n + 1) * 1000:
+    #ticker = utils.tick(currency)
+    #tbuy, tsell = float(ticker["ticker"]["buy"]), float(ticker["ticker"]["sell"])
+    #if int(time.time() * 1000) > int(created_at) + utils.str2sec(t) * (n + 0.2) * 1000 or tbuy / buy * 100 - 100 > float(increase * 1.05) or tbuy / buy * 100 - 100 < -1.0 * float(increase * 1.05):
+    if float(a) == 0.0:
+      print "clear"
       c.execute("update trade set updated_at = ?, sell = ? where tid = ?", (int(time.time() * 1000), buy, tid))
+      conn.commit()
   conn.close()
   
 
